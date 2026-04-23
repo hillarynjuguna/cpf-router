@@ -12,7 +12,8 @@ import {
 import {
   loadPrefs,
   savePrefs,
-  saveSession
+  saveSession,
+  listSessions
 } from './storage.js';
 
 const state = {
@@ -56,7 +57,7 @@ function cacheEls() {
     'paste-char-count', 'cpf-objective', 'cpf-state', 'cpf-insights', 'cpf-unresolved', 'cpf-next',
     'routing-guard', 'target-selected-info', 'checklist-source-label', 'checklist-status',
     'handoff-status', 'progress-fill', 'checklist-items', 'cpf-tag-block', 'full-cpf-block',
-    'footer-buttons', 'copy-toast', 'content'
+    'footer-buttons', 'copy-toast', 'content', 'vault-btn', 'vault-modal', 'close-vault-btn', 'vault-list'
   ];
   for (const id of ids) els[id] = document.getElementById(id);
 }
@@ -64,6 +65,8 @@ function cacheEls() {
 function bindEvents() {
   els['edit-ache-btn'].addEventListener('click', toggleAcheEditor);
   els['raw-input'].addEventListener('input', onRawInput);
+  els['vault-btn'].addEventListener('click', openVault);
+  els['close-vault-btn'].addEventListener('click', () => { els['vault-modal'].style.display = 'none'; });
 
   for (const id of ['cpf-objective', 'cpf-state', 'cpf-insights', 'cpf-unresolved', 'cpf-next']) {
     els[id].addEventListener('input', syncCPFInputs);
@@ -447,4 +450,52 @@ async function copyPacket() {
 function showToast() {
   els['copy-toast'].classList.add('show');
   setTimeout(() => els['copy-toast'].classList.remove('show'), 1600);
+}
+
+async function openVault() {
+  els['vault-modal'].style.display = 'block';
+  els['vault-list'].innerHTML = '<div class="empty-state">Loading...</div>';
+  const sessions = await listSessions(10);
+  if (!sessions.length) {
+    els['vault-list'].innerHTML = '<div class="empty-state">No saved sessions found.</div>';
+    return;
+  }
+  
+  els['vault-list'].innerHTML = sessions.map((s, i) => {
+    const d = new Date(s.timestamp);
+    const timeStr = isNaN(d.getTime()) ? s.timestamp : d.toLocaleString();
+    const source = NODES[s.source]?.label || s.source;
+    const target = NODES[s.target]?.label || s.target;
+    const obj = s.cpf?.objective || 'No objective set';
+    return `
+      <div class="vault-item" data-index="${i}">
+        <div class="vault-item-time">${escapeHTML(timeStr)}</div>
+        <div class="vault-item-route">${escapeHTML(source)} → ${escapeHTML(target)}</div>
+        <div class="vault-item-ache">${escapeHTML(obj)}</div>
+      </div>
+    `;
+  }).join('');
+
+  els['vault-list'].querySelectorAll('.vault-item').forEach(el => {
+    el.addEventListener('click', () => {
+      restoreSession(sessions[Number(el.dataset.index)]);
+      els['vault-modal'].style.display = 'none';
+    });
+  });
+}
+
+async function restoreSession(s) {
+  state.sessionId = s.id || crypto.randomUUID();
+  state.sourceNode = s.source;
+  state.targetNode = s.target;
+  state.cpf = s.cpf || { objective: '', state: '', insights: '', unresolved: '', next: '' };
+  
+  if (state.sourceNode && state.targetNode) {
+     ensureChecklistForRoute(); 
+  }
+
+  state.step = 5;
+  syncFormFields();
+  renderAll();
+  await renderExportStep();
 }

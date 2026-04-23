@@ -243,7 +243,8 @@ export function parseRawToCPF(raw, ache = '') {
 }
 
 function inferObjective(raw) {
-  const firstSentence = raw.split(/(?<=[.!?])\s+/)[0] ?? '';
+  const match = raw.match(/[^.!?]+[.!?]?/);
+  const firstSentence = match ? match[0].trim() : raw;
   return firstSentence.slice(0, 220);
 }
 

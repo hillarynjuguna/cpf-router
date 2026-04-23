@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cpf-router-pwa-v1';
+const CACHE_NAME = 'cpf-router-pwa-v2';
 const PRECACHE = [
   './',
   './index.html',
@@ -6,7 +6,10 @@ const PRECACHE = [
   './rules.js',
   './storage.js',
   './sw.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', event => {
