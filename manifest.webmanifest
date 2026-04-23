@@ -1,0 +1,11 @@
+{
+  "name": "CPF Router",
+  "short_name": "CPF Router",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0C0C0A",
+  "theme_color": "#0C0C0A",
+  "description": "\u03c4-node routing and CPF export pipeline.",
+  "icons": []
+}
