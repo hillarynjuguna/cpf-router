@@ -206,7 +206,7 @@ export function getRoutingDecision(sourceId, targetId) {
   const rules = LAYER_ROUTING_RULES[sourceId];
   if (!rules) return { allowed: true, reason: '' };
 
-  const targetRange = target.layer.split('/').map(part => {
+  const targetRange = target.layer.split(/[\/\–\-]/).map(part => {
     const n = Number.parseInt(part.replace(/[^\d]/g, ''), 10);
     return Number.isFinite(n) ? n : null;
   }).filter(Boolean);
@@ -331,7 +331,7 @@ BOUNDARY: Follow CPF objective
 FAILURE FLAG: Preserve original ache; flag context drift`;
 }
 
-export function buildExportPacket({
+export async function buildExportPacket({
   sourceNode,
   targetNode,
   cpf,
@@ -391,7 +391,7 @@ ${ppd}`;
       next: cpf.next || ''
     },
     provenance: provenance.block,
-    rawInputHash: sha256Hex(rawInput ?? ''),
+    rawInputHash: await sha256Hex(rawInput ?? ''),
     ppd,
   };
 

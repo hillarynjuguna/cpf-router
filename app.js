@@ -368,7 +368,7 @@ async function nextStep() {
   }
 
   if (state.step === 4) {
-    renderExportStep();
+    await renderExportStep();
   }
 
   if (state.step < state.totalSteps) {
@@ -377,9 +377,9 @@ async function nextStep() {
   }
 }
 
-function renderExportStep() {
+async function renderExportStep() {
   try {
-    const packet = buildExportPacket({
+    const packet = await buildExportPacket({
       sourceNode: state.sourceNode,
       targetNode: state.targetNode,
       cpf: state.cpf,
@@ -410,7 +410,7 @@ function renderExportStep() {
 }
 
 async function copyPacket() {
-  const packet = buildExportPacket({
+  const packet = await buildExportPacket({
     sourceNode: state.sourceNode,
     targetNode: state.targetNode,
     cpf: state.cpf,
