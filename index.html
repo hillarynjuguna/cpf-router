@@ -11,109 +11,264 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <title>CPF Router — τ-Node Handoff Protocol</title>
   <style>
-    :root{
-      --bg:#0C0C0A; --bg1:#141412; --bg2:#1C1C19; --bg3:#242420;
-      --border:#2E2E2A; --border2:#3A3A34; --text:#E4E4DA; --text2:#9A9A8E; --text3:#5A5A52;
-      --amber:#C8973A; --amber-dim:#8A6420; --amber-bg:#1E1608; --teal:#2A9268; --coral:#C05030;
-      --blue:#4A7AB8; --purple:#7A68C8; --red:#C84040; --red-bg:#1A0808; --green:#4A8A50; --green-bg:#081408;
-      --r:8px; --r2:12px;
+    :root {
+      --bg: #0C0C0C;
+      --bg-panel: #141414;
+      --bg-surface: #1E1E1E;
+      --border: #2A2A2A;
+      --border-focus: #444444;
+      --text: #F5F5F5;
+      --text-dim: #B0B0B0;
+      --text-muted: #808080;
+      --amber: #FFB300;
+      --amber-dim: #C88E00;
+      --amber-bg: rgba(255, 179, 0, 0.05);
+      --red: #FF5252;
+      --green: #4CAF50;
+      --r: 6px;
+      --r-lg: 10px;
     }
-    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-    html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
-    body{touch-action:manipulation}
-    button,input,select,textarea{font:inherit}
-    #app{display:flex;flex-direction:column;height:100dvh;max-width:560px;margin:0 auto}
-    #header{flex:0 0 auto;padding:14px 16px 10px;border-bottom:1px solid var(--border);background:var(--bg)}
-    #content{flex:1 1 auto;overflow:auto;padding:16px;-webkit-overflow-scrolling:touch}
-    #footer{flex:0 0 auto;padding:12px 16px 18px;border-top:1px solid var(--border);background:var(--bg)}
-    .header-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-    .logo{font-size:12px;letter-spacing:.14em;color:var(--amber);font-weight:700}
-    .step-indicator{display:flex;gap:5px;align-items:center}
-    .step-dot{width:7px;height:7px;border-radius:999px;background:var(--border2)}
-    .step-dot.done{background:var(--amber-dim)}
-    .step-dot.active{background:var(--amber)}
-    .step-label{font-size:11px;color:var(--text3);letter-spacing:.08em}
-    #ache-bar{margin-top:10px;padding:10px 12px;border:1px solid var(--amber-dim);background:var(--amber-bg);border-radius:var(--r)}
-    .ache-row{display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .ache-label{font-size:10px;letter-spacing:.12em;color:var(--amber);font-weight:700}
-    .ache-text{margin-top:4px;font-size:13px;line-height:1.45;color:var(--text)}
-    .ache-text.placeholder{color:var(--text3);font-style:italic}
-    .set-ache-btn{border:none;background:none;color:var(--amber);font-size:11px;letter-spacing:.08em;font-weight:700;cursor:pointer}
-    .section-title{font-size:11px;letter-spacing:.12em;color:var(--text3);font-weight:700;margin-bottom:10px}
-    .chips-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-    .chip{position:relative;padding:10px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;text-align:center;user-select:none}
-    .chip:active{transform:scale(.98)}
-    .chip.selected{border-color:var(--chip-color,var(--amber));background:color-mix(in srgb, var(--chip-color,var(--amber)) 14%, var(--bg2))}
-    .chip-name{font-size:12px;font-weight:700}
-    .chip-layer{font-size:10px;color:var(--text3);letter-spacing:.04em;margin-top:1px}
-    .chip-risk{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:999px}
-    .risk-critical{background:var(--red)}
-    .risk-high{background:#C87030}
-    .risk-medium{background:#C8A030}
-    .risk-low{background:var(--green)}
-    .risk-tau{background:var(--amber)}
-    .node-info{padding:10px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);margin-bottom:14px;display:flex;align-items:flex-start;gap:12px}
-    .node-info-dot{width:8px;height:8px;border-radius:999px;flex:0 0 auto;margin-top:6px}
-    .node-info-name{font-size:13px;font-weight:700}
-    .node-info-role{font-size:12px;color:var(--text3);margin-top:1px}
-    .node-info-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-    .badge{font-size:10px;letter-spacing:.06em;padding:2px 6px;border-radius:4px;font-weight:700}
-    .badge-layer{background:var(--bg3);color:var(--text2)}
-    .badge-risk-critical{background:var(--red-bg);color:var(--red)}
-    .badge-risk-high{background:#1A0D00;color:#C87030}
-    .badge-risk-medium{background:#1A1400;color:#C8A030}
-    .badge-risk-low{background:var(--green-bg);color:var(--green)}
-    .badge-tau{background:var(--amber-bg);color:var(--amber)}
-    .textarea-label{font-size:11px;letter-spacing:.08em;color:var(--text3);margin:12px 0 6px;display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .char-count{font-size:11px;color:var(--text3)}
-    textarea,input,select{
-      width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);color:var(--text);
-      padding:12px;outline:none;resize:none
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { 
+      height: 100%; 
+      background: var(--bg); 
+      color: var(--text); 
+      font-family: 'Inter', -apple-system, sans-serif; 
+      overflow: hidden;
+      line-height: 1.5;
     }
-    textarea::placeholder,input::placeholder{color:var(--text3)}
-    textarea:focus,input:focus,select:focus{border-color:var(--amber-dim)}
-    .cpf-fields{display:flex;flex-direction:column;gap:10px}
-    .cpf-field label{font-size:10px;letter-spacing:.12em;color:var(--amber-dim);font-weight:700;display:block;margin-bottom:5px}
-    .cpf-field textarea{font-size:13px;padding:10px 12px}
-    .checklist{display:flex;flex-direction:column;gap:6px}
-    .checklist-progress{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:2px 0 10px;font-size:12px;color:var(--text3)}
-    .progress-bar{height:2px;background:var(--border);border-radius:999px;overflow:hidden;margin-bottom:12px}
-    .progress-fill{height:100%;background:var(--green);width:0%;transition:width .2s ease}
-    .check-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border);cursor:pointer;user-select:none}
-    .check-item.checked{background:var(--green-bg);border-color:var(--green)}
-    .check-item:active{transform:scale(.99)}
-    .check-box{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--border2);flex:0 0 auto;margin-top:1px;display:flex;align-items:center;justify-content:center}
-    .check-item.checked .check-box{background:var(--green);border-color:var(--green)}
-    .check-mark{color:#fff;font-size:11px;font-weight:800}
-    .check-text{font-size:13px;color:var(--text2);line-height:1.4}
-    .check-item.checked .check-text{color:var(--text);text-decoration:line-through;text-decoration-color:var(--text3)}
-    .routing-guard{padding:10px 12px;border-radius:var(--r);border:1px solid var(--red);background:var(--red-bg);margin-bottom:12px;font-size:12px;color:var(--red);line-height:1.5;display:none}
-    .routing-guard.show{display:block}
-    .tag-block{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.8;color:var(--text2);word-break:break-word;white-space:pre-wrap}
-    .tag-key{color:var(--amber-dim)}
-    .tag-val{color:var(--text)}
-    .tag-warn{color:var(--coral)}
-    .tag-ok{color:var(--teal)}
-    .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    .btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:var(--r2);border:none;font-size:15px;font-weight:700;cursor:pointer;width:100%;transition:transform .15s ease, opacity .15s ease;letter-spacing:.02em}
-    .btn:active{transform:scale(.99)}
-    .btn-primary{background:var(--amber);color:#0C0C0A}
-    .btn-secondary{background:var(--bg2);color:var(--text);border:1px solid var(--border2)}
-    .btn-success{background:var(--green);color:#fff}
-    .btn-disabled{opacity:.38;pointer-events:none}
-    .step-view{display:none}
-    .step-view.active{display:block}
-    .divider{height:1px;background:var(--border);margin:16px 0}
-    .copy-toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:8px 18px;border-radius:999px;font-size:13px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;z-index:1000}
-    .copy-toast.show{opacity:1}
-    .empty-state{text-align:center;padding:32px 16px;color:var(--text3);font-size:13px}
-    #content::-webkit-scrollbar{width:3px}
-    #content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:999px}
-    .vault-item{padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;user-select:none;transition:transform .1s}
-    .vault-item:active{transform:scale(.98)}
-    .vault-item-time{font-size:10px;color:var(--text3);margin-bottom:4px}
-    .vault-item-route{font-size:12px;font-weight:700;color:var(--text)}
-    .vault-item-ache{font-size:11px;color:var(--text2);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    #app {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100dvh;
+      max-width: 1400px;
+      margin: 0 auto;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+
+    /* HEADER */
+    #header {
+      padding: 12px 20px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+    }
+    .header-row {
+      display: grid;
+      grid-template-columns: 140px 1fr auto auto;
+      align-items: center;
+      gap: 24px;
+    }
+    .logo {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.25em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .ache-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: var(--r);
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      outline: none;
+      transition: all 0.2s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ache-text:focus { border-color: var(--amber); background: var(--bg); }
+    .ache-text::placeholder { color: var(--text-muted); opacity: 0.8; }
+    .ache-text.placeholder { color: var(--text-muted); font-style: italic; }
+
+    .route-display {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--amber);
+      background: var(--amber-bg);
+      padding: 8px 16px;
+      border-radius: var(--r);
+      border: 1px solid var(--amber-dim);
+    }
+    .risk-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+
+    /* WORKSPACE */
+    #workspace {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      overflow: hidden;
+    }
+    .workspace-main {
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+      border-right: 1px solid var(--border);
+      scrollbar-width: thin;
+    }
+    .workspace-sidebar {
+      padding: 24px;
+      background: var(--bg-panel);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .workspace-section { display: flex; flex-direction: column; gap: 12px; }
+    .section-label {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .field-label-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .char-count { font-size: 10px; color: var(--text-muted); font-family: monospace; }
+    
+    textarea {
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      color: var(--text);
+      padding: 14px;
+      resize: vertical;
+      outline: none;
+      transition: all 0.2s;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    textarea:focus { border-color: var(--amber-dim); background: var(--bg); }
+    textarea::placeholder { color: var(--text-muted); opacity: 0.8; }
+    .input-primary { min-height: 200px; font-size: 16px; }
+
+    .cpf-editor { display: grid; gap: 16px; }
+    .cpf-field label { 
+      font-size: 11px; 
+      font-weight: 700; 
+      color: var(--text-dim); 
+      margin-bottom: 6px; 
+      display: block; 
+      text-transform: uppercase; 
+    }
+    
+    /* SIDEBAR ELEMENTS */
+    .sidebar-group { display: flex; flex-direction: column; gap: 16px; }
+    .chips-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .chip {
+      padding: 12px 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip:hover { border-color: var(--text-muted); }
+    .chip.selected { border-color: var(--chip-color); background: rgba(var(--chip-color-rgb), 0.1); }
+    .chip-name { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+    .chip.selected .chip-name { color: var(--text); }
+
+    .checklist { display: flex; flex-direction: column; gap: 10px; }
+    .check-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      cursor: pointer;
+    }
+    .check-box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .check-item.checked .check-box { background: var(--green); border-color: var(--green); position: relative; }
+    .check-item.checked .check-box::after {
+      content: '✓';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--bg);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .check-text { font-size: 12px; color: var(--text-dim); }
+    .check-item.checked .check-text { color: var(--text); }
+
+    /* FOOTER */
+    #footer {
+      padding: 16px 20px;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+    }
+    .action-bar { display: flex; align-items: center; gap: 16px; }
+    .btn {
+      height: 44px;
+      padding: 0 24px;
+      border-radius: var(--r);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .btn-secondary { background: transparent; border-color: var(--border); color: var(--text-dim); }
+    .btn-secondary:hover { border-color: var(--text-muted); color: var(--text); }
+    .btn-primary { background: var(--amber); color: var(--bg); }
+    .btn-primary:hover { background: var(--amber-dim); }
+    .btn-success { background: var(--bg-surface); border-color: var(--border); color: var(--text); }
+    .btn-success:hover { border-color: var(--amber-dim); }
+
+    /* UTILS */
+    .conf-badge {
+      font-size: 9px;
+      font-weight: 900;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--text-muted);
+      display: none;
+      transition: all 0.2s;
+    }
+    .conf-badge.show { display: inline-block; }
+    .conf-low { color: var(--red); background: rgba(255, 82, 82, 0.1); }
+    .conf-mid { color: var(--amber); background: rgba(255, 179, 0, 0.1); }
+    .conf-high { color: var(--green); background: rgba(76, 175, 80, 0.1); }
+    .field-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .field-header label { margin-bottom: 0; }
+    .parse-quality { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
+    .paste-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    @media (max-width: 1000px) {
+      #workspace { grid-template-columns: 1fr; overflow-y: auto; }
+      .workspace-sidebar { width: 100%; border-top: 1px solid var(--border); }
+    }
+  }
+
   </style>
 </head>
 <body>
@@ -121,100 +276,129 @@
     <header id="header">
       <div class="header-row">
         <span class="logo">CPF / τ-ROUTER</span>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button type="button" id="vault-btn" style="background:none;border:none;color:var(--amber);font-size:10px;font-weight:800;cursor:pointer;letter-spacing:0.1em;padding:4px 8px;border:1px solid var(--amber-dim);border-radius:4px">VAULT</button>
-          <div class="step-indicator" id="step-dots" aria-hidden="true"></div>
-          <span class="step-label" id="step-label">STEP 1 OF 5</span>
+        <div id="ache-display" class="ache-text placeholder" contenteditable="true">No anchor set — tap to set your core query</div>
+        <div class="route-display">
+          <span id="route-nodes">— → —</span>
+          <span id="risk-indicator" class="risk-dot"></span>
         </div>
+        <button type="button" id="vault-btn" class="vault-btn">VAULT</button>
       </div>
-
-      <div id="ache-bar">
-        <div class="ache-row">
-          <div class="ache-label">ACHE ANCHOR</div>
-          <button class="set-ache-btn" id="edit-ache-btn" type="button">EDIT</button>
-        </div>
-        <div class="ache-text placeholder" id="ache-display">No anchor set — tap EDIT to set your core query</div>
-      </div>
-      <div id="ache-editor-slot"></div>
     </header>
 
-    <main id="content">
-      <section class="step-view active" id="step-1">
-        <div class="section-title">SOURCE NODE — WHERE DID THIS OUTPUT COME FROM?</div>
-        <div class="chips-grid" id="source-chips"></div>
-        <div style="height:8px"></div>
-        <div style="font-size:11px;color:var(--text3);padding:0 4px">
-          Risk indicators: <span style="color:var(--red)">● critical</span>
-          <span style="color:#C87030">● high</span>
-          <span style="color:#C8A030">● medium</span>
-          <span style="color:var(--green)">● low</span>
-          <span style="color:var(--amber)">● τ</span>
+    <main id="workspace">
+      <!-- Main Panel: Input + CPF Editor -->
+      <div class="workspace-main">
+        <section class="workspace-section">
+          <div class="field-label-row">
+            <span class="section-label">INPUT FROM <span id="paste-from-label">—</span></span>
+            <span id="parse-quality" class="parse-quality"></span>
+            <span id="paste-char-count" class="char-count">0 chars</span>
+          </div>
+          <textarea id="raw-input" class="input-primary" placeholder="Paste AI output here..."></textarea>
+          <div id="source-node-hint" class="paste-hint"></div>
+        </section>
+
+        <section class="workspace-section">
+          <div class="section-label">CPF AUTO-STRUCTURE</div>
+          <div class="cpf-editor">
+            <div class="cpf-field">
+              <div class="field-header">
+                <label>OBJECTIVE</label>
+                <span id="conf-objective" class="conf-badge"></span>
+              </div>
+              <textarea id="cpf-objective" rows="2" placeholder="Core goal..."></textarea>
+            </div>
+            <div class="cpf-field">
+              <div class="field-header">
+                <label>CURRENT STATE</label>
+                <span id="conf-state" class="conf-badge"></span>
+              </div>
+              <textarea id="cpf-state" rows="4" placeholder="Established facts..."></textarea>
+            </div>
+            <div class="cpf-field">
+              <div class="field-header">
+                <label>KEY INSIGHTS</label>
+                <span id="conf-insights" class="conf-badge"></span>
+              </div>
+              <textarea id="cpf-insights" rows="4" placeholder="Operational findings..."></textarea>
+            </div>
+            <div class="cpf-field">
+              <div class="field-header">
+                <label>UNRESOLVED QUESTIONS</label>
+                <span id="conf-unresolved" class="conf-badge"></span>
+              </div>
+              <textarea id="cpf-unresolved" rows="2" placeholder="Ambiguities..."></textarea>
+            </div>
+            <div class="cpf-field">
+              <div class="field-header">
+                <label>NEXT TASK</label>
+                <span id="conf-next" class="conf-badge"></span>
+              </div>
+              <textarea id="cpf-next" rows="2" placeholder="Upcoming hop instructions..."></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section id="export-preview" class="workspace-section" style="display:none">
+           <div class="section-label">PROVENANCE & PACKET PREVIEW</div>
+           <div class="tag-block" id="cpf-tag-block"></div>
+           <div style="height:10px"></div>
+           <div class="tag-block" id="full-cpf-block" style="max-height:200px; overflow:auto"></div>
+        </section>
+      </div>
+
+      <!-- Sidebar: Controls + Nodes -->
+      <aside class="workspace-sidebar">
+        <div class="sidebar-group">
+          <div class="section-label">SOURCE</div>
+          <div class="chips-grid" id="source-chips"></div>
         </div>
-      </section>
 
-      <section class="step-view" id="step-2">
-        <div id="source-node-info" class="node-info"></div>
-        <div class="textarea-label">
-          <span>PASTE OUTPUT FROM <span id="paste-from-label" style="color:var(--text)">—</span></span>
-          <span class="char-count" id="paste-char-count">0 chars</span>
+        <div class="sidebar-group">
+          <div class="section-label">TARGET</div>
+          <div class="chips-grid" id="target-chips"></div>
+          <div id="routing-guard" class="routing-guard"></div>
         </div>
-        <textarea id="raw-input" rows="10" placeholder="Paste the model output here..."></textarea>
-      </section>
 
-      <section class="step-view" id="step-3">
-        <div class="section-title">CPF AUTO-STRUCTURER — REVIEW AND EDIT</div>
-        <div class="cpf-fields">
-          <div class="cpf-field">
-            <label for="cpf-objective">OBJECTIVE</label>
-            <textarea id="cpf-objective" rows="2" placeholder="What was this query/task trying to accomplish?"></textarea>
-          </div>
-          <div class="cpf-field">
-            <label for="cpf-state">CURRENT STATE</label>
-            <textarea id="cpf-state" rows="3" placeholder="What the output established or confirmed..."></textarea>
-          </div>
-          <div class="cpf-field">
-            <label for="cpf-insights">KEY INSIGHTS</label>
-            <textarea id="cpf-insights" rows="3" placeholder="The most operationally relevant findings..."></textarea>
-          </div>
-          <div class="cpf-field">
-            <label for="cpf-unresolved">UNRESOLVED QUESTIONS</label>
-            <textarea id="cpf-unresolved" rows="2" placeholder="What this output left open or ambiguous..."></textarea>
-          </div>
-          <div class="cpf-field">
-            <label for="cpf-next">NEXT TASK</label>
-            <textarea id="cpf-next" rows="2" placeholder="What needs to happen in the next node..."></textarea>
-          </div>
-        </div>
-      </section>
-
-      <section class="step-view" id="step-4">
-        <div class="section-title">TARGET NODE — WHERE IS THIS GOING?</div>
-        <div class="chips-grid" id="target-chips" style="margin-bottom:16px"></div>
-        <div class="routing-guard" id="routing-guard" role="alert"></div>
-
-        <div id="target-selected-info" style="display:none">
-          <div class="divider"></div>
-          <div class="section-title">τ-NODE VERIFICATION CHECKLIST — <span id="checklist-source-label" style="color:var(--text)">—</span></div>
-          <div class="checklist-progress">
-            <span id="checklist-status">0 of 0 cleared</span>
-            <span id="handoff-status" style="color:var(--text3)">NOT READY</span>
+        <div id="checklist-area" class="sidebar-group" style="display:none">
+          <div class="section-label">VERIFICATION checklist</div>
+          <div class="checklist-status-row">
+            <span id="checklist-status">0/0</span>
+            <span id="handoff-status">NOT READY</span>
           </div>
           <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
           <div class="checklist" id="checklist-items"></div>
         </div>
-      </section>
 
-      <section class="step-view" id="step-5">
-        <div class="section-title">PROVENANCE TAG + EXPORT PACKET</div>
-        <div class="tag-block" id="cpf-tag-block"></div>
-        <div style="height:14px"></div>
-        <div class="section-title">FULL CPF PACKET (COPY TO CLIPBOARD)</div>
-        <div class="tag-block" id="full-cpf-block"></div>
-      </section>
+        <div class="sidebar-group">
+          <div class="section-label">OPERATOR IDENTITY</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <input type="text" id="attestor-input" placeholder="τ_UNKNOWN" 
+              style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r);
+              color:var(--text);padding:8px 12px;font-size:12px;outline:none;font-family:inherit"
+            />
+            <select id="attestor-standard" 
+              style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r);
+              color:var(--text);padding:8px 12px;font-size:12px;outline:none;font-family:inherit;
+              appearance:none;cursor:pointer">
+              <option value="manual">Manual Review</option>
+              <option value="rri-v1">RRI v1 Standard</option>
+              <option value="governance-audit">Governance Audit</option>
+              <option value="automated">Automated Check</option>
+            </select>
+          </div>
+        </div>
+      </aside>
     </main>
 
     <footer id="footer">
-      <div class="btn-row" id="footer-buttons"></div>
+      <div class="action-bar">
+        <button type="button" class="btn btn-secondary" id="clear-btn">CLEAR</button>
+        <div style="flex:1"></div>
+        <button type="button" class="btn btn-success" id="copy-ai-btn">COPY FOR AI</button>
+        <button type="button" class="btn btn-success" id="copy-json-btn">COPY JSON</button>
+        <button type="button" class="btn btn-primary" id="next-hop-btn">NEXT HOP →</button>
+      </div>
     </footer>
   </div>
 

@@ -3,10 +3,12 @@ import {
   getChecklistForSource,
   getRoutingDecision,
   parseRawToCPF,
+  detectSecondOrderSynthesis,
   allChecklistCleared,
   buildExportPacket,
   escapeHTML,
-  pickNodeBadgeClass
+  pickNodeBadgeClass,
+  PASTE_HINTS
 } from './rules.js';
 
 import {
@@ -17,8 +19,6 @@ import {
 } from './storage.js';
 
 const state = {
-  step: 1,
-  totalSteps: 5,
   ache: '',
   sourceNode: '',
   targetNode: '',
@@ -28,11 +28,18 @@ const state = {
     state: '',
     insights: '',
     unresolved: '',
-    next: ''
+    next: '',
+    meta: {}
   },
   checklist: [],
   checklistState: {},
-  sessionId: crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
+  sessionId: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+  // Chain metadata for multi-hop provenance
+  hopCount: 1,
+  parentSessionId: null,
+  lineage: [],
+  attestor: 'τ_UNKNOWN',
+  attestorStandard: 'manual'
 };
 
 const els = {};
@@ -43,33 +50,95 @@ async function init() {
   cacheEls();
   bindEvents();
   await hydrate();
+  await handleIncomingShare();
   renderAll();
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.addEventListener('message', ({ data }) => {
+      if (data?.type === 'SW_UPDATED') {
+        showToast('App updated — reload for latest version', 3000);
+      }
+    });
   }
 }
 
 function cacheEls() {
   const ids = [
-    'step-dots', 'step-label', 'ache-display', 'edit-ache-btn', 'ache-editor-slot',
-    'source-chips', 'target-chips', 'source-node-info', 'raw-input', 'paste-from-label',
-    'paste-char-count', 'cpf-objective', 'cpf-state', 'cpf-insights', 'cpf-unresolved', 'cpf-next',
-    'routing-guard', 'target-selected-info', 'checklist-source-label', 'checklist-status',
-    'handoff-status', 'progress-fill', 'checklist-items', 'cpf-tag-block', 'full-cpf-block',
-    'footer-buttons', 'copy-toast', 'content', 'vault-btn', 'vault-modal', 'close-vault-btn', 'vault-list'
+    'ache-display', 'route-nodes', 'risk-indicator', 'vault-btn',
+    'source-chips', 'target-chips', 'raw-input', 'paste-from-label',
+    'paste-char-count', 'parse-quality', 'source-node-hint',
+    'cpf-objective', 'cpf-state', 'cpf-insights', 'cpf-unresolved', 'cpf-next',
+    'conf-objective', 'conf-state', 'conf-insights', 'conf-unresolved', 'conf-next',
+    'export-preview', 'cpf-tag-block', 'full-cpf-block',
+    'checklist-area', 'checklist-status', 'handoff-status', 'progress-fill', 'checklist-items',
+    'routing-guard', 'clear-btn', 'copy-ai-btn', 'copy-json-btn', 'next-hop-btn',
+    'copy-toast', 'vault-modal', 'close-vault-btn', 'vault-list',
+    'attestor-input', 'attestor-standard'
   ];
-  for (const id of ids) els[id] = document.getElementById(id);
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) els[id] = el;
+  }
 }
 
 function bindEvents() {
-  els['edit-ache-btn'].addEventListener('click', toggleAcheEditor);
-  els['raw-input'].addEventListener('input', onRawInput);
+  const cpfFields = ['cpf-objective', 'cpf-state', 'cpf-insights', 'cpf-unresolved', 'cpf-next'];
+  for (const id of cpfFields) {
+    els[id].addEventListener('input', () => {
+      syncCPFInputs();
+      autoGrow(els[id]);
+      renderExportPreview();
+      saveDraft();
+    });
+    els[id].addEventListener('focus', () => highlightSource(id));
+    els[id].addEventListener('blur', () => clearSourceHighlight());
+  }
+
+  els['raw-input'].addEventListener('input', () => {
+    onRawInput();
+    saveDraft();
+  });
+
+  els['ache-display'].addEventListener('click', startAcheEdit);
+  els['ache-display'].addEventListener('blur', finishAcheEdit);
+  els['ache-display'].addEventListener('keydown', e => { 
+    if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } 
+  });
+
+  els['clear-btn'].addEventListener('click', clearAll);
+  els['copy-ai-btn'].addEventListener('click', () => copyPacket('ai'));
+  els['copy-json-btn'].addEventListener('click', () => copyPacket('json'));
+  els['next-hop-btn'].addEventListener('click', startNextHop);
   els['vault-btn'].addEventListener('click', openVault);
   els['close-vault-btn'].addEventListener('click', () => { els['vault-modal'].style.display = 'none'; });
 
-  for (const id of ['cpf-objective', 'cpf-state', 'cpf-insights', 'cpf-unresolved', 'cpf-next']) {
-    els[id].addEventListener('input', syncCPFInputs);
+  // Operator identity
+  els['attestor-input'].addEventListener('change', () => {
+    state.attestor = els['attestor-input'].value.trim() || 'τ_UNKNOWN';
+    savePrefs({ attestor: state.attestor });
+  });
+  els['attestor-standard'].addEventListener('change', () => {
+    state.attestorStandard = els['attestor-standard'].value;
+    savePrefs({ attestorStandard: state.attestorStandard });
+  });
+}
+
+async function saveDraft() {
+  const draft = {
+    rawInput: state.rawInput,
+    cpf: state.cpf,
+    hopCount: state.hopCount,
+    parentSessionId: state.parentSessionId,
+    lineage: state.lineage
+  };
+  await savePrefs({ draft });
+}
+
+function autoGrow(el) {
+  if (!window.CSS || !CSS.supports('field-sizing', 'content')) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
   }
 }
 
@@ -77,24 +146,61 @@ async function hydrate() {
   const prefs = await loadPrefs();
   state.ache = prefs.ache || '';
   state.checklistState = prefs.checklistState || {};
-  if (state.ache) els['edit-ache-btn'].textContent = 'EDIT';
+  state.attestor = prefs.attestor || 'τ_UNKNOWN';
+  state.attestorStandard = prefs.attestorStandard || 'manual';
+  
+  if (prefs.draft) {
+    state.rawInput = prefs.draft.rawInput || '';
+    state.cpf = prefs.draft.cpf || state.cpf;
+    state.hopCount = prefs.draft.hopCount || 1;
+    state.parentSessionId = prefs.draft.parentSessionId || null;
+    state.lineage = prefs.draft.lineage || [];
+  }
+
+  if (!state.sourceNode && prefs.lastTargetNode) {
+    state.sourceNode = prefs.lastTargetNode;
+  }
+}
+
+async function handleIncomingShare() {
+  const url = new URL(window.location.href);
+  const title = url.searchParams.get('title');
+  const text = url.searchParams.get('text');
+  const sharedUrl = url.searchParams.get('url');
+
+  let incoming = '';
+  if (text) incoming += text;
+  if (sharedUrl) incoming += (incoming ? '\n\n' : '') + sharedUrl;
+  
+  if (title && (!text || !text.includes(title))) {
+    incoming = `[Shared: ${title}]\n\n` + incoming;
+  }
+
+  if (incoming.trim()) {
+    state.rawInput = incoming.trim();
+    onRawInput();
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 }
 
 function renderAll() {
-  renderStepDots();
   renderAche();
+  renderRouteHeader();
   renderChips('source-chips', state.sourceNode, selectSource);
   renderChips('target-chips', state.targetNode, selectTarget);
-  renderFooter();
-  renderStepSpecific();
-}
-
-function renderStepDots() {
-  els['step-dots'].innerHTML = Array.from({ length: state.totalSteps }, (_, i) => {
-    const cls = i + 1 < state.step ? 'done' : i + 1 === state.step ? 'active' : '';
-    return `<div class="step-dot ${cls}"></div>`;
-  }).join('');
-  els['step-label'].textContent = `STEP ${state.step} OF ${state.totalSteps}`;
+  renderSourceContext();
+  renderChecklistArea();
+  syncFormFields();
+  renderExportPreview();
+  updateButtonStates();
+  
+  // Attestor UI sync
+  if (els['attestor-input']) {
+    els['attestor-input'].value = state.attestor === 'τ_UNKNOWN' ? '' : state.attestor;
+  }
+  if (els['attestor-standard']) {
+    els['attestor-standard'].value = state.attestorStandard;
+  }
 }
 
 function renderAche() {
@@ -102,40 +208,36 @@ function renderAche() {
     els['ache-display'].textContent = state.ache;
     els['ache-display'].classList.remove('placeholder');
   } else {
-    els['ache-display'].textContent = 'No anchor set — tap EDIT to set your core query';
+    els['ache-display'].textContent = 'No anchor set — tap to set your core query';
     els['ache-display'].classList.add('placeholder');
   }
 }
 
-function toggleAcheEditor() {
-  const existing = document.getElementById('ache-input-wrap');
-  if (existing) {
-    existing.remove();
-    els['edit-ache-btn'].textContent = state.ache ? 'EDIT' : 'SET';
-    return;
+function startAcheEdit() {
+  if (!state.ache) {
+    els['ache-display'].textContent = '';
+    els['ache-display'].classList.remove('placeholder');
   }
-
-  const wrap = document.createElement('div');
-  wrap.id = 'ache-input-wrap';
-  wrap.style.cssText = 'margin-top:8px';
-  wrap.innerHTML = `
-    <textarea id="ache-input" rows="2" style="width:100%;font-size:13px;padding:10px;background:var(--bg3);border:1px solid var(--amber-dim);border-radius:var(--r);color:var(--text);resize:none;outline:none;font-family:inherit" placeholder="Your core query / original research ache...">${escapeHTML(state.ache)}</textarea>
-    <button type="button" id="save-ache-btn" style="margin-top:6px;width:100%;padding:9px;background:var(--amber);color:#0C0C0A;border:none;border-radius:var(--r);font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.06em">SET ANCHOR</button>
-  `;
-  els['ache-editor-slot'].replaceChildren(wrap);
-  document.getElementById('save-ache-btn').addEventListener('click', saveAche);
-  document.getElementById('ache-input').focus();
+  els['ache-display'].contentEditable = 'true';
+  els['ache-display'].focus();
 }
 
-async function saveAche() {
-  const input = document.getElementById('ache-input');
-  const val = (input?.value || '').trim();
+async function finishAcheEdit() {
+  els['ache-display'].contentEditable = 'false';
+  const val = els['ache-display'].textContent.trim();
   state.ache = val;
-  document.getElementById('ache-input-wrap')?.remove();
-  els['edit-ache-btn'].textContent = state.ache ? 'EDIT' : 'SET';
   renderAche();
   await savePrefs({ ache: state.ache, checklistState: state.checklistState });
-  renderFooter();
+}
+
+function renderRouteHeader() {
+  const s = NODES[state.sourceNode]?.label || '—';
+  const t = NODES[state.targetNode]?.label || '—';
+  els['route-nodes'].textContent = `${s} → ${t}`;
+  
+  const risk = NODES[state.targetNode]?.risk || 'none';
+  const riskMap = { critical: 'var(--red)', high: '#C87030', medium: '#C8A030', low: 'var(--green)', tau: 'var(--amber)' };
+  els['risk-indicator'].style.background = riskMap[risk] || 'var(--text3)';
 }
 
 function renderChips(containerId, selectedId, onSelect) {
@@ -144,9 +246,7 @@ function renderChips(containerId, selectedId, onSelect) {
     const selected = selectedId === id ? 'selected' : '';
     return `
       <button type="button" class="chip ${selected}" data-id="${id}" style="--chip-color:${node.color}">
-        <div class="chip-risk ${node.riskClass}"></div>
         <div class="chip-name">${escapeHTML(node.label)}</div>
-        <div class="chip-layer">${escapeHTML(node.layer)}</div>
       </button>
     `;
   }).join('');
@@ -156,17 +256,8 @@ function renderChips(containerId, selectedId, onSelect) {
   });
 }
 
-function resetDependentStateOnSourceChange() {
-  state.rawInput = '';
-  state.cpf = { objective: '', state: '', insights: '', unresolved: '', next: '' };
-  state.checklist = [];
-  syncFormFields();
-}
-
 function selectSource(id) {
-  if (state.sourceNode && state.sourceNode !== id) {
-    resetDependentStateOnSourceChange();
-  }
+  if (state.sourceNode === id) return;
   state.sourceNode = id;
   renderAll();
 }
@@ -185,100 +276,33 @@ function selectTarget(id) {
   renderAll();
 }
 
+function renderSourceContext() {
+  const node = NODES[state.sourceNode];
+  els['paste-from-label'].textContent = node ? node.label.toUpperCase() : '—';
+  els['source-node-hint'].textContent = node ? `💡 ${PASTE_HINTS[state.sourceNode] || 'Review output for context.'}` : '';
+}
+
 function ensureChecklistForRoute() {
   if (!state.sourceNode || !state.targetNode) {
     state.checklist = [];
     return;
   }
-  const routeKey = routeKeyOf(state.sourceNode, state.targetNode);
+  const routeKey = `${state.sourceNode}→${state.targetNode}`;
   const checklist = state.checklistState[routeKey];
-  if (Array.isArray(checklist) && checklist.length === getChecklistForSource(state.sourceNode).length) {
+  const expectedLength = getChecklistForSource(state.sourceNode).length;
+  if (Array.isArray(checklist) && checklist.length === expectedLength) {
     state.checklist = checklist.slice();
   } else {
     state.checklist = getChecklistForSource(state.sourceNode).map(() => false);
   }
 }
 
-function routeKeyOf(source, target) {
-  return `${source}→${target}`;
-}
+function renderChecklistArea() {
+  const show = state.sourceNode && state.targetNode;
+  els['checklist-area'].style.display = show ? 'block' : 'none';
+  if (!show) return;
 
-function onRawInput() {
-  state.rawInput = els['raw-input'].value;
-  els['paste-char-count'].textContent = `${state.rawInput.length.toLocaleString()} chars`;
-  renderFooter();
-}
-
-function syncCPFInputs() {
-  state.cpf.objective = els['cpf-objective'].value;
-  state.cpf.state = els['cpf-state'].value;
-  state.cpf.insights = els['cpf-insights'].value;
-  state.cpf.unresolved = els['cpf-unresolved'].value;
-  state.cpf.next = els['cpf-next'].value;
-}
-
-function syncFormFields() {
-  els['raw-input'].value = state.rawInput;
-  els['paste-char-count'].textContent = `${state.rawInput.length.toLocaleString()} chars`;
-  els['cpf-objective'].value = state.cpf.objective;
-  els['cpf-state'].value = state.cpf.state;
-  els['cpf-insights'].value = state.cpf.insights;
-  els['cpf-unresolved'].value = state.cpf.unresolved;
-  els['cpf-next'].value = state.cpf.next;
-}
-
-function renderStepSpecific() {
-  for (const id of ['step-1', 'step-2', 'step-3', 'step-4', 'step-5']) {
-    document.getElementById(id).classList.toggle('active', id === `step-${state.step}`);
-  }
-
-  if (state.step === 2) {
-    renderSourceNodeInfo();
-  } else if (state.step === 4) {
-    renderTargetStep();
-  } else if (state.step === 5) {
-    renderExportStep();
-  }
-}
-
-function renderSourceNodeInfo() {
-  const node = NODES[state.sourceNode];
-  if (!node) {
-    els['source-node-info'].innerHTML = `<div class="empty-state">Select a source node first.</div>`;
-    els['paste-from-label'].textContent = '—';
-    return;
-  }
-
-  els['source-node-info'].innerHTML = `
-    <div class="node-info-dot" style="background:${node.color}"></div>
-    <div>
-      <div class="node-info-name">${escapeHTML(node.label)}</div>
-      <div class="node-info-role">${escapeHTML(node.role)}</div>
-      <div class="node-info-badges">
-        <span class="badge badge-layer">${escapeHTML(node.layer)}</span>
-        <span class="badge badge-${node.risk === 'tau' ? 'tau' : pickNodeBadgeClass(node.risk)}">${node.risk.toUpperCase()} RISK</span>
-      </div>
-    </div>
-  `;
-  els['paste-from-label'].textContent = node.label.toUpperCase();
-}
-
-function renderTargetStep() {
-  const routeReady = Boolean(state.sourceNode && state.targetNode);
-  els['target-selected-info'].style.display = routeReady ? 'block' : 'none';
-  if (!routeReady) return;
-
-  els['checklist-source-label'].textContent = `${NODES[state.sourceNode]?.label || '—'} OUTPUT`;
-  renderChecklist();
-  updateChecklistProgress();
-}
-
-function renderChecklist() {
   const checklist = getChecklistForSource(state.sourceNode);
-  if (!state.checklist.length || state.checklist.length !== checklist.length) {
-    ensureChecklistForRoute();
-  }
-
   els['checklist-items'].innerHTML = checklist.map((text, index) => {
     const checked = Boolean(state.checklist[index]);
     return `
@@ -292,164 +316,277 @@ function renderChecklist() {
   els['checklist-items'].querySelectorAll('.check-item').forEach(el => {
     el.addEventListener('click', () => toggleCheck(Number(el.dataset.index)));
   });
+  updateChecklistProgress();
 }
 
 async function toggleCheck(index) {
   state.checklist[index] = !state.checklist[index];
-  const routeKey = routeKeyOf(state.sourceNode, state.targetNode);
+  const routeKey = `${state.sourceNode}→${state.targetNode}`;
   state.checklistState[routeKey] = state.checklist.slice();
   await savePrefs({ ache: state.ache, checklistState: state.checklistState });
-  renderChecklist();
-  updateChecklistProgress();
-  renderFooter();
+  renderChecklistArea();
+  updateButtonStates();
 }
 
 function updateChecklistProgress() {
   const done = state.checklist.filter(Boolean).length;
   const total = state.checklist.length;
   const pct = total ? Math.round((done / total) * 100) : 0;
-  els['checklist-status'].textContent = `${done} of ${total} cleared`;
+  els['checklist-status'].textContent = `${done}/${total}`;
   els['progress-fill'].style.width = `${pct}%`;
   const ready = total > 0 && done === total;
   els['handoff-status'].textContent = ready ? 'τ-VERIFIED' : 'NOT READY';
   els['handoff-status'].style.color = ready ? 'var(--green)' : 'var(--text3)';
 }
 
-function canAdvance() {
-  switch (state.step) {
-    case 1:
-      return Boolean(state.sourceNode);
-    case 2:
-      return state.rawInput.trim().length > 20;
-    case 3:
-      return true;
-    case 4:
-      return Boolean(state.targetNode) && allChecklistCleared(state.checklist);
-    default:
-      return true;
-  }
-}
-
-function renderFooter() {
-  const can = canAdvance();
-  if (state.step === 1) {
-    els['footer-buttons'].innerHTML = `
-      <div></div>
-      <button type="button" class="btn btn-primary ${can ? '' : 'btn-disabled'}" id="next-btn">SELECT SOURCE →</button>
-    `;
-  } else if (state.step === 5) {
-    els['footer-buttons'].innerHTML = `
-      <button type="button" class="btn btn-secondary" id="back-btn">← BACK</button>
-      <button type="button" class="btn btn-success" id="copy-btn">COPY PACKET</button>
-    `;
-  } else {
-    const nextLabel = state.step === 4 ? 'BUILD EXPORT →' : 'NEXT →';
-    els['footer-buttons'].innerHTML = `
-      <button type="button" class="btn btn-secondary" id="back-btn">← BACK</button>
-      <button type="button" class="btn btn-primary ${can ? '' : 'btn-disabled'}" id="next-btn">${nextLabel}</button>
-    `;
-  }
-
-  document.getElementById('back-btn')?.addEventListener('click', prevStep);
-  document.getElementById('next-btn')?.addEventListener('click', nextStep);
-  document.getElementById('copy-btn')?.addEventListener('click', copyPacket);
-}
-
-function prevStep() {
-  if (state.step > 1) {
-    state.step -= 1;
-    renderAll();
-  }
-}
-
-async function nextStep() {
-  if (!canAdvance()) return;
-
-  if (state.step === 2) {
-    state.cpf = parseRawToCPF(state.rawInput, state.ache);
-    syncFormFields();
-  }
-
-  if (state.step === 4) {
-    await renderExportStep();
-  }
-
-  if (state.step < state.totalSteps) {
-    state.step += 1;
-    renderAll();
-  }
-}
-
-async function renderExportStep() {
-  try {
-    const packet = await buildExportPacket({
-      sourceNode: state.sourceNode,
-      targetNode: state.targetNode,
-      cpf: state.cpf,
-      checklist: state.checklist,
-      sessionId: state.sessionId,
-      rawInput: state.rawInput
-    });
-
-    const lines = packet.provenance.split('\n');
-    els['cpf-tag-block'].innerHTML = lines.map(line => {
-      const idx = line.indexOf(':');
-      if (idx < 0) {
-        return `${escapeHTML(line)}<br>`;
+function onRawInput() {
+  state.rawInput = els['raw-input'].value;
+  const chars = state.rawInput.length;
+  
+  // Auto-parse if we have enough content and it changed significantly
+  if (chars > 20) {
+    const result = parseRawToCPF(state.rawInput, state.ache, state.targetNode);
+    
+    if (result._classified) {
+      const bridges = detectSecondOrderSynthesis(result._classified, 'standard');
+      if (bridges.length > 0) {
+        const bridgeText = bridges.map(b => `${b.tag} ${b.text}`).join('\n');
+        result.insights = result.insights ? `${result.insights}\n\n[SYNTHESIS DETECTED]\n${bridgeText}` : bridgeText;
       }
-      const key = escapeHTML(line.slice(0, idx));
-      const value = escapeHTML(line.slice(idx + 1));
-      const isWarn = line.includes('⚠') || line.includes('NO');
-      const isOk = line.includes('YES');
-      const cls = isWarn ? 'tag-warn' : isOk ? 'tag-ok' : 'tag-val';
-      return `<span class="tag-key">${key}</span>:<span class="${cls}">${value}</span><br>`;
-    }).join('');
+    }
 
-    els['full-cpf-block'].textContent = packet.humanText + '\n\n━━━ JSON PAYLOAD ━━━\n\n' + packet.jsonText;
-  } catch (error) {
-    els['full-cpf-block'].textContent = `Export error: ${error.message}`;
-    els['cpf-tag-block'].textContent = '';
+    state.cpf = result;
+    syncFormFields();
+    
+    // Quality Signal
+    const q = result.quality || 0.5;
+    
+    let label = 'LOW SIGNAL';
+    let color = 'var(--red)';
+    if (q >= 0.75) { label = 'HIGH SIGNAL'; color = 'var(--green)'; }
+    else if (q >= 0.4) { label = 'MID SIGNAL'; color = 'var(--yellow)'; }
+    
+    els['parse-quality'].textContent = label;
+    els['parse-quality'].style.color = color;
+    els['parse-quality'].style.display = 'inline';
+    els['paste-char-count'].textContent = `${chars.toLocaleString()} chars`;
+  } else {
+    els['parse-quality'].style.display = 'none';
+    els['paste-char-count'].textContent = `${chars.toLocaleString()} chars`;
+  }
+
+  updateButtonStates();
+  renderExportPreview();
+}
+
+function syncCPFInputs() {
+  const fields = ['objective', 'state', 'insights', 'unresolved'];
+  fields.forEach(f => {
+    state.cpf[f] = els[`cpf-${f}`].value;
+    if (state.cpf.meta && state.cpf.meta[f]) {
+      state.cpf.meta[f].span = null;
+      state.cpf.meta[f].confidence = Math.min(state.cpf.meta[f].confidence, 0.5);
+    }
+  });
+  // NEXT TASK: rebuild structured from edited text
+  const nextVal = els['cpf-next'].value;
+  if (typeof state.cpf.next === 'object') {
+    state.cpf.next.rawDirective = nextVal;
+    state.cpf.next.confidence = 0.5;
+  } else {
+    state.cpf.next = nextVal;
+  }
+  if (state.cpf.meta && state.cpf.meta.next) {
+    state.cpf.meta.next.span = null;
+    state.cpf.meta.next.confidence = 0.5;
   }
 }
 
-async function copyPacket() {
+function syncFormFields() {
+  els['raw-input'].value = state.rawInput;
+  const fields = ['objective', 'state', 'insights', 'unresolved', 'next'];
+  fields.forEach(f => {
+    let val;
+    if (f === 'next' && typeof state.cpf.next === 'object') {
+      const n = state.cpf.next;
+      val = n.rawDirective || '';
+      // Show structured info in placeholder-like display
+      if (n.taskType && n.taskType !== 'unspecified') {
+        const prefix = `[${n.taskType.toUpperCase()}]`;
+        val = val ? `${prefix} ${val}` : prefix;
+      }
+    } else {
+      val = state.cpf[f] || '';
+    }
+    els[`cpf-${f}`].value = val;
+    autoGrow(els[`cpf-${f}`]);
+    
+    // Confidence Display
+    const meta = state.cpf.meta && state.cpf.meta[f];
+    const badge = els[`conf-${f}`];
+    if (badge && meta) {
+      const conf = meta.confidence;
+      badge.textContent = conf >= 0.8 ? 'HIGH' : (conf >= 0.4 ? 'MID' : 'LOW');
+      badge.className = 'conf-badge show ' + (conf >= 0.8 ? 'conf-high' : (conf >= 0.4 ? 'conf-mid' : 'conf-low'));
+      badge.title = `Source Confidence: ${Math.round(conf * 100)}%`;
+    } else if (badge) {
+      badge.classList.remove('show');
+    }
+  });
+  autoGrow(els['raw-input']);
+}
+
+function highlightSource(fieldId) {
+  const fieldKey = fieldId.replace('cpf-', '');
+  const meta = state.cpf.meta && state.cpf.meta[fieldKey];
+  if (meta && meta.span) {
+    const { start, end } = meta.span;
+    const rawInputEl = els['raw-input'];
+    
+    // Set selection
+    rawInputEl.setSelectionRange(start, end);
+    rawInputEl.classList.add('source-highlight');
+    
+    // Scroll to selection (more accurate using line ratios)
+    const lines = rawInputEl.value.split('\n');
+    const textBefore = rawInputEl.value.substring(0, start);
+    const lineIndex = textBefore.split('\n').length - 1;
+    const linePct = lineIndex / lines.length;
+    rawInputEl.scrollTop = (rawInputEl.scrollHeight * linePct) - 60;
+    
+    // Pulse effect on the badge
+    const badge = els[`conf-${fieldKey}`];
+    if (badge) {
+      badge.style.transform = 'scale(1.1)';
+      setTimeout(() => badge.style.transform = 'scale(1)', 200);
+    }
+  }
+}
+
+function clearSourceHighlight() {
+  els['raw-input'].classList.remove('source-highlight');
+}
+
+async function renderExportPreview() {
+  const ready = state.rawInput.length > 20 && state.sourceNode && state.targetNode;
+  els['export-preview'].style.display = ready ? 'block' : 'none';
+  if (!ready) return;
+
   const packet = await buildExportPacket({
     sourceNode: state.sourceNode,
     targetNode: state.targetNode,
     cpf: state.cpf,
     checklist: state.checklist,
     sessionId: state.sessionId,
-    rawInput: state.rawInput
+    rawInput: state.rawInput,
+    hopCount: state.hopCount,
+    parentSessionId: state.parentSessionId,
+    lineage: state.lineage,
+    attestor: state.attestor,
+    attestorStandard: state.attestorStandard
   });
 
-  const text = `${packet.humanText}\n\n━━━ JSON PAYLOAD ━━━\n\n${packet.jsonText}`;
+  const lines = packet.provenance.split('\n');
+  els['cpf-tag-block'].innerHTML = lines.map(line => {
+    const idx = line.indexOf(':');
+    if (idx < 0) return `${escapeHTML(line)}<br>`;
+    const key = escapeHTML(line.slice(0, idx));
+    const value = escapeHTML(line.slice(idx + 1));
+    const cls = (line.includes('⚠') || line.includes('NO')) ? 'tag-warn' : line.includes('YES') ? 'tag-ok' : 'tag-val';
+    return `<span class="tag-key">${key}</span>:<span class="${cls}">${value}</span><br>`;
+  }).join('');
+
+  els['full-cpf-block'].textContent = packet.humanText + '\n\n━━━ JSON PAYLOAD ━━━\n\n' + packet.jsonText;
+}
+
+function updateButtonStates() {
+  const hasInput = state.rawInput.trim().length > 20;
+  const hasNodes = state.sourceNode && state.targetNode;
+  const verified = allChecklistCleared(state.checklist);
+  
+  const ready = hasInput && hasNodes && verified;
+  
+  els['copy-ai-btn'].classList.toggle('btn-disabled', !ready);
+  els['copy-json-btn'].classList.toggle('btn-disabled', !ready);
+  els['next-hop-btn'].classList.toggle('btn-disabled', !ready);
+}
+
+function clearAll() {
+  if (!confirm('Clear all inputs and reset session?')) return;
+  state.rawInput = '';
+  state.sourceNode = '';
+  state.targetNode = '';
+  state.cpf = { objective: '', state: '', insights: '', unresolved: '', next: '' };
+  state.checklist = [];
+  state.sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  renderAll();
+}
+
+async function copyPacket(type) {
+  const packet = await buildExportPacket({
+    sourceNode: state.sourceNode,
+    targetNode: state.targetNode,
+    cpf: state.cpf,
+    checklist: state.checklist,
+    sessionId: state.sessionId,
+    rawInput: state.rawInput,
+    hopCount: state.hopCount,
+    parentSessionId: state.parentSessionId,
+    lineage: state.lineage,
+    attestor: state.attestor,
+    attestorStandard: state.attestorStandard
+  });
+
+  const text = type === 'ai' ? packet.humanText : packet.jsonText;
 
   try {
     await navigator.clipboard.writeText(text);
-    showToast();
+    showToast(`Copied ${type.toUpperCase()}`);
     await saveSession({
       id: state.sessionId,
       timestamp: new Date().toISOString(),
       source: state.sourceNode,
       target: state.targetNode,
-      cpf: state.cpf
+      cpf: state.cpf,
+      hopCount: state.hopCount,
+      lineage: state.lineage
     });
-  } catch {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-    showToast();
+    await savePrefs({
+      ache: state.ache,
+      checklistState: state.checklistState,
+      lastTargetNode: state.targetNode,
+      attestor: state.attestor,
+      attestorStandard: state.attestorStandard
+    });
+  } catch (err) {
+    console.error('Clipboard error', err);
   }
 }
 
-function showToast() {
+function startNextHop() {
+  if (!state.targetNode) return;
+  const prevSessionId = state.sessionId;
+  const prevSource = state.sourceNode;
+  
+  // Advance chain metadata
+  state.lineage = state.lineage.concat([prevSource]);
+  state.parentSessionId = prevSessionId;
+  state.hopCount = state.hopCount + 1;
+  state.sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  
+  state.sourceNode = state.targetNode;
+  state.targetNode = '';
+  state.rawInput = '';
+  state.cpf = { objective: state.ache, state: '', insights: '', unresolved: '', next: '', meta: {} };
+  state.checklist = [];
+  renderAll();
+  saveDraft();
+}
+
+function showToast(msg = 'Copied', duration = 1600) {
+  els['copy-toast'].textContent = msg;
   els['copy-toast'].classList.add('show');
-  setTimeout(() => els['copy-toast'].classList.remove('show'), 1600);
+  setTimeout(() => els['copy-toast'].classList.remove('show'), duration);
 }
 
 async function openVault() {
@@ -457,7 +594,7 @@ async function openVault() {
   els['vault-list'].innerHTML = '<div class="empty-state">Loading...</div>';
   const sessions = await listSessions(10);
   if (!sessions.length) {
-    els['vault-list'].innerHTML = '<div class="empty-state">No saved sessions found.</div>';
+    els['vault-list'].innerHTML = '<div class="empty-state">No saved sessions.</div>';
     return;
   }
   
@@ -478,24 +615,14 @@ async function openVault() {
 
   els['vault-list'].querySelectorAll('.vault-item').forEach(el => {
     el.addEventListener('click', () => {
-      restoreSession(sessions[Number(el.dataset.index)]);
+      const s = sessions[Number(el.dataset.index)];
+      state.sessionId = s.id || crypto.randomUUID();
+      state.sourceNode = s.source;
+      state.targetNode = s.target;
+      state.cpf = s.cpf || { objective: '', state: '', insights: '', unresolved: '', next: '' };
+      ensureChecklistForRoute();
+      renderAll();
       els['vault-modal'].style.display = 'none';
     });
   });
-}
-
-async function restoreSession(s) {
-  state.sessionId = s.id || crypto.randomUUID();
-  state.sourceNode = s.source;
-  state.targetNode = s.target;
-  state.cpf = s.cpf || { objective: '', state: '', insights: '', unresolved: '', next: '' };
-  
-  if (state.sourceNode && state.targetNode) {
-     ensureChecklistForRoute(); 
-  }
-
-  state.step = 5;
-  syncFormFields();
-  renderAll();
-  await renderExportStep();
 }

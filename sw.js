@@ -5,7 +5,6 @@ const PRECACHE = [
   './app.js',
   './rules.js',
   './storage.js',
-  './sw.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -23,9 +22,12 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : Promise.resolve()))
-    )
+    ).then(() => self.clients.claim())
+     .then(() => self.clients.matchAll())
+     .then(clients => {
+       clients.forEach(client => client.postMessage({ type: 'SW_UPDATED' }));
+     })
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
@@ -36,16 +38,9 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy)).catch(() => {});
-          return response;
-        })
-        .catch(async () => {
-          const cached = await caches.match('./index.html');
-          return cached || Response.error();
-        })
+      caches.match('./index.html')
+        .then(cached => cached || fetch(request))
+        .catch(() => fetch(request))
     );
     return;
   }
