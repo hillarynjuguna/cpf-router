@@ -5,10 +5,11 @@ const PRECACHE = [
   './app.js',
   './rules.js',
   './storage.js',
+  './sw.js',
   './manifest.webmanifest',
+  './offline.html',
   './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png'
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -22,12 +23,9 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : Promise.resolve()))
-    ).then(() => self.clients.claim())
-     .then(() => self.clients.matchAll())
-     .then(clients => {
-       clients.forEach(client => client.postMessage({ type: 'SW_UPDATED' }));
-     })
+    )
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
@@ -38,9 +36,10 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match('./index.html')
-        .then(cached => cached || fetch(request))
-        .catch(() => fetch(request))
+      fetch(request).catch(async () => {
+        const cachedOffline = await caches.match('./offline.html');
+        return cachedOffline || caches.match('./index.html') || Response.error();
+      })
     );
     return;
   }

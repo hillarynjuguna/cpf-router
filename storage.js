@@ -61,47 +61,31 @@ export async function loadPrefs() {
     return {
       ache: readLocal('cpf_ache', ''),
       checklistState: readLocal('cpf_checklist_state', {}),
-      draft: readLocal('cpf_draft', null),
-      attestor: readLocal('cpf_attestor', 'τ_UNKNOWN'),
-      attestorStandard: readLocal('cpf_attestor_standard', 'manual'),
-      lastTargetNode: readLocal('cpf_last_target', null)
     };
   }
-  const getKey = (key, fallback) => withStore(STORE_PREFS, 'readonly', store => new Promise((resolve, reject) => {
-    const req = store.get(key);
-    req.onsuccess = () => resolve(req.result ?? fallback);
+  const ache = await withStore(STORE_PREFS, 'readonly', store => new Promise((resolve, reject) => {
+    const req = store.get('ache');
+    req.onsuccess = () => resolve(req.result ?? '');
     req.onerror = () => reject(req.error);
   }));
-
-  const [ache, checklistState, draft, attestor, attestorStandard, lastTargetNode] = await Promise.all([
-    getKey('ache', ''),
-    getKey('checklistState', {}),
-    getKey('draft', null),
-    getKey('attestor', 'τ_UNKNOWN'),
-    getKey('attestorStandard', 'manual'),
-    getKey('lastTargetNode', null)
-  ]);
-  return { ache: ache ?? '', checklistState: checklistState ?? {}, draft, attestor, attestorStandard, lastTargetNode };
+  const checklistState = await withStore(STORE_PREFS, 'readonly', store => new Promise((resolve, reject) => {
+    const req = store.get('checklistState');
+    req.onsuccess = () => resolve(req.result ?? {});
+    req.onerror = () => reject(req.error);
+  }));
+  return { ache: ache ?? '', checklistState: checklistState ?? {} };
 }
 
-export async function savePrefs({ ache, checklistState, draft, attestor, attestorStandard, lastTargetNode }) {
+export async function savePrefs({ ache, checklistState }) {
   const db = await openDB();
   if (!db) {
     if (typeof ache === 'string') writeLocal('cpf_ache', ache);
     if (checklistState && typeof checklistState === 'object') writeLocal('cpf_checklist_state', checklistState);
-    if (draft) writeLocal('cpf_draft', draft);
-    if (typeof attestor === 'string') writeLocal('cpf_attestor', attestor);
-    if (typeof attestorStandard === 'string') writeLocal('cpf_attestor_standard', attestorStandard);
-    if (typeof lastTargetNode === 'string') writeLocal('cpf_last_target', lastTargetNode);
     return;
   }
   await withStore(STORE_PREFS, 'readwrite', store => {
     if (typeof ache === 'string') store.put(ache, 'ache');
     if (checklistState && typeof checklistState === 'object') store.put(checklistState, 'checklistState');
-    if (draft) store.put(draft, 'draft');
-    if (typeof attestor === 'string') store.put(attestor, 'attestor');
-    if (typeof attestorStandard === 'string') store.put(attestorStandard, 'attestorStandard');
-    if (typeof lastTargetNode === 'string') store.put(lastTargetNode, 'lastTargetNode');
   });
 }
 
@@ -153,7 +137,6 @@ export async function clearAll() {
     localStorage.removeItem('cpf_ache');
     localStorage.removeItem('cpf_checklist_state');
     localStorage.removeItem('cpf_sessions');
-    localStorage.removeItem('cpf_draft');
     return;
   }
   await Promise.all([

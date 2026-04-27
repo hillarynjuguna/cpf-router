@@ -1,38 +1,43 @@
 {
+  "id": "./",
   "name": "CPF Router",
   "short_name": "CPF Router",
-  "start_url": "./",
+  "description": "\u03c4-node routing and CPF export pipeline.",
+  "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "background_color": "#0C0C0A",
   "theme_color": "#0C0C0A",
-  "description": "τ-node routing and CPF export pipeline.",
   "icons": [
     {
       "src": "./icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "./icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "./icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ],
-  "share_target": {
-    "action": "./",
-    "method": "GET",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url"
+  "shortcuts": [
+    {
+      "name": "New Route",
+      "short_name": "Route",
+      "description": "Start a fresh routing session",
+      "url": "./?mode=new"
+    },
+    {
+      "name": "Resume Session",
+      "short_name": "Resume",
+      "description": "Return to the last working state",
+      "url": "./?mode=resume"
     }
-  }
+  ]
 }
